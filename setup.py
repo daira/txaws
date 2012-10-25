@@ -1,8 +1,7 @@
 from distutils.core import setup
 from glob import glob
-import os
+import os, re
 
-from txaws import version
 
 # If setuptools is present, use it to find_packages(), and also
 # declare our dependency on epsilon.
@@ -31,10 +30,19 @@ representing the spectrum of Amazon's web services as well as support for
 Eucalyptus clouds.
 """
 
+def read_version_py(infname):
+    verstrline = open(infname, "rt").read()
+    VSRE = r"^txaws = ['\"]([^'\"]*)['\"]"
+    mo = re.search(VSRE, verstrline, re.M)
+    assert mo, "version line not found"
+    return mo.group(1)
+
+version = read_version_py("txaws/version.py")
+
 
 setup(
     name="txAWS",
-    version=version.txaws,
+    version=version,
     description="Async library for EC2 and Eucalyptus",
     author="txAWS Developers",
     author_email="txaws-discuss@lists.launchpad.net",
