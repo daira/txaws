@@ -12,6 +12,7 @@ Various API-incompatible changes are planned in order to expose missing
 functionality in this wrapper.
 """
 import mimetypes
+from urllib2 import quote
 
 from twisted.web.http import datetimeToString
 
@@ -87,6 +88,11 @@ class S3Client(BaseClient):
             query_factory = Query
         super(S3Client, self).__init__(creds, endpoint, query_factory)
 
+    def _make_query_parameters(self, kwargs):
+        if not kwargs:
+            return ''
+        return '?' + '&'.join(['%s=%s' % (k.replace('_', '-'), quote(kwargs[k], safe='')) for k in kwargs])
+
     def list_buckets(self):
         """
         List all buckets.
@@ -133,13 +139,13 @@ class S3Client(BaseClient):
             bucket=bucket)
         return query.submit()
 
-    def get_bucket(self, bucket):
+    def get_bucket(self, bucket, **kwargs):
         """
         Get a list of all the objects in a bucket.
         """
         query = self.query_factory(
             action="GET", creds=self.creds, endpoint=self.endpoint,
-            bucket=bucket)
+            bucket=bucket, object_name=self._make_query_parameters(kwargs))
         d = query.submit()
         return d.addCallback(self._parse_get_bucket)
 
@@ -377,8 +383,11 @@ class Query(BaseQuery):
                    "Date": self.date}
         for key, value in self.metadata.iteritems():
             headers["x-amz-meta-" + key] = value
-        for key, value in self.amz_headers.iteritems():
-            headers["x-amz-" + key] = value
+        for key, values in self.amz_headers.iteritems():
+            if isinstance(values, tuple):
+                headers["x-amz-" + key] = ",".join(values)
+            else:
+                headers["x-amz-" + key] = values
         # Before we check if the content type is set, let's see if we can set
         # it by guessing the the mimetype.
         self.set_content_type()
@@ -399,21 +408,42 @@ class Query(BaseQuery):
             if name.lower().startswith("x-amz-")]
         headers.sort()
         # XXX missing spec implementation:
-        # 1) txAWS doesn't currently combine headers with the same name
-        # 2) txAWS doesn't currently unfold long headers
-        return "".join("%s:%s\n" % (name, value) for name, value in headers)
+        # txAWS doesn't currently unfold long headers
+        def represent(n, vs):
+            if isinstance(vs, tuple):
+                return "".join(["%s:%s\n" % (n, vs) for v in vs])
+            else:
+                return "%s:%s\n" % (n, vs)
+
+        return "".join([represent(name, value) for name, value in headers])
 
     def get_canonicalized_resource(self):
         """
         Get an S3 resource path.
         """
+
+        # As <http://docs.amazonwebservices.com/AmazonS3/latest/dev/RESTAuthentication.html>
+        # says, if there is a subresource (e.g. ?acl), it is included, but other query
+        # parameters (e.g. ?prefix=... in a GET Bucket request) are not included.
+        # Yes, that makes no sense in terms of either security or consistency.
+        resource = self.object_name
+        if resource:
+            q = resource.find('?')
+            if q >= 0:
+                # There can be both a subresource and other parameters, for example
+                # '?versions&prefix=foo'. "You are in a maze of twisty edge cases..."
+                firstparam = resource[q:].partition('&')[0]  # includes the initial '?'
+                resource = resource[:q]                      # strip the query
+                if '=' not in firstparam:
+                    resource += firstparam                   # add back '?subresource' if present
+
         path = "/"
         if self.bucket is not None:
             path += self.bucket
-        if self.bucket is not None and self.object_name:
-            if not self.object_name.startswith("/"):
+        if self.bucket is not None and resource:
+            if not resource.startswith("/"):
                 path += "/"
-            path += self.object_name
+            path += resource
         elif self.bucket is not None and not path.endswith("/"):
             path += "/"
         return path
