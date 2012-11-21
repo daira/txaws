@@ -16,7 +16,7 @@ from urllib2 import quote
 
 from twisted.web.http import datetimeToString
 
-from epsilon.extime import Time
+from dateutil.parser import parse as parseTime
 
 from txaws.client.base import BaseClient, BaseQuery, error_wrapper
 from txaws.s3.acls import AccessControlPolicy
@@ -114,7 +114,7 @@ class S3Client(BaseClient):
         for bucket_data in root.find("Buckets"):
             name = bucket_data.findtext("Name")
             date_text = bucket_data.findtext("CreationDate")
-            date_time = Time.fromISO8601TimeAndDate(date_text).asDatetime()
+            date_time = parseTime(date_text)
             bucket = Bucket(name, date_time)
             buckets.append(bucket)
         return buckets
@@ -161,8 +161,7 @@ class S3Client(BaseClient):
         for content_data in root.findall("Contents"):
             key = content_data.findtext("Key")
             date_text = content_data.findtext("LastModified")
-            modification_date = Time.fromISO8601TimeAndDate(
-                date_text).asDatetime()
+            modification_date = parseTime(date_text)
             etag = content_data.findtext("ETag")
             size = content_data.findtext("Size")
             storage_class = content_data.findtext("StorageClass")

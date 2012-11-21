@@ -4,12 +4,12 @@ import os, re
 
 
 # If setuptools is present, use it to find_packages(), and also
-# declare our dependency on epsilon.
+# declare our dependency on python-dateutil.
 extra_setup_args = {}
 try:
     import setuptools
     from setuptools import find_packages
-    extra_setup_args['install_requires'] = ['Epsilon']
+    extra_setup_args['install_requires'] = ['python-dateutil']
 except ImportError:
     def find_packages():
         """
